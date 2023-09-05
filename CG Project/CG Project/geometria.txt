@@ -1,0 +1,150 @@
+﻿// NxM darab négyszöggel közelítjük a parametrikus felületünket => (N+1)x(M+1) pontban kell kiértékelni
+	std::vector<Vertex> vert((N + 1) * (M + 1));
+	for (int j = 0; j <= M; ++j)
+	{
+		for (int i = 0; i <= N; ++i)
+		{
+			float u = i / (float)N;
+			float v = j / (float)M;
+			int index = i + j * (N + 1);
+			vert[index].p = GetTorusPos(u, v);
+			vert[index].c = glm::normalize(vert[index].p);
+		}
+	}
+
+	std::vector<Vertex> vert1((N + 1) * (M + 1));
+	for (int j = 0; j <= M; ++j)
+	{
+		for (int i = 0; i <= N; ++i)
+		{
+			float u = i / (float)N;
+			float v = j / (float)M;
+			int index = i + j * (N + 1);
+			vert1[index].p = GetUV(u, v);
+			vert1[index].c = glm::normalize(vert[index].p);
+		}
+	}
+
+	// indexpuffer adatai: NxM négyszög = 2xNxM háromszög = háromszöglista esetén 3x2xNxM index
+	std::vector<GLushort> indices(3 * 2 * (N) * (M));
+	for (int j = 0; j < M; ++j)
+	{
+		for (int i = 0; i < N; ++i)
+		{
+			// minden négyszögre csináljunk kettő háromszöget, amelyek a következő 
+			// (i,j) indexeknél született (u_i, v_j) paraméterértékekhez tartozó
+			// pontokat kötik össze:
+			// 
+			// (i,j+1) C-----D (i+1,j+1)
+			//         |\    |				A = p(u_i, v_j)
+			//         | \   |				B = p(u_{i+1}, v_j)
+			//         |  \  |				C = p(u_i, v_{j+1})
+			//         |   \ |				D = p(u_{i+1}, v_{j+1})
+			//         |    \|
+			//   (i,j) A-----B (i+1,j)
+			//
+			// - az (i,j)-hez tartózó 1D-s index a VBO-ban: i+j*(N+1)
+			// - az (i,j)-hez tartózó 1D-s index az IB-ben: i*6+j*6*N
+			//		(mert minden négyszöghöz 2db háromszög = 6 index tartozik)
+			//
+			int index = i * 6 + j * (6 * N);
+			indices[index + 0] = (i)+(j) * (N + 1);
+			indices[index + 1] = (i + 1) + (j) * (N + 1);
+			indices[index + 2] = (i)+(j + 1) * (N + 1);
+			indices[index + 3] = (i + 1) + (j) * (N + 1);
+			indices[index + 4] = (i + 1) + (j + 1) * (N + 1);
+			indices[index + 5] = (i)+(j + 1) * (N + 1);
+		}
+	}
+
+
+
+		// 1 db VAO foglalasa
+	glGenVertexArrays(1, &m_vaoID);
+	// a frissen generált VAO beallitasa aktívnak
+	glBindVertexArray(m_vaoID);
+
+	// hozzunk létre egy új VBO erőforrás nevet
+	glGenBuffers(1, &m_vboID);
+	glBindBuffer(GL_ARRAY_BUFFER, m_vboID); // tegyük "aktívvá" a létrehozott VBO-t
+	// töltsük fel adatokkal az aktív VBO-t
+	glBufferData(GL_ARRAY_BUFFER,				// az aktív VBO-ba töltsünk adatokat
+		vert.size() * sizeof(Vertex),	// ennyi bájt nagyságban
+		vert.data(),					// erről a rendszermemóriabeli címről olvasva
+		GL_STATIC_DRAW);				// úgy, hogy a VBO-nkba nem tervezünk ezután írni és minden kirajzoláskor felhasnzáljuk a benne lévő adatokat
+
+
+	// VAO-ban jegyezzük fel, hogy a VBO-ban az első 3 float sizeof(Vertex)-enként lesz az első attribútum (pozíció)
+	glEnableVertexAttribArray(0); // ez lesz majd a pozíció
+	glVertexAttribPointer(
+		0,				// a VB-ben található adatok közül a 0. "indexű" attribútumait állítjuk be
+		3,				// komponens szam
+		GL_FLOAT,		// adatok tipusa
+		GL_FALSE,		// normalizalt legyen-e
+		sizeof(Vertex),	// stride (0=egymás után)
+		0				// a 0. indexű attribútum hol kezdődik a sizeof(Vertex)-nyi területen belül
+	);
+
+	// a második attribútumhoz pedig a VBO-ban sizeof(Vertex) ugrás után sizeof(glm::vec3)-nyit menve újabb 3 float adatot találunk (szín)
+	glEnableVertexAttribArray(1); // ez lesz majd a szín
+	glVertexAttribPointer(
+		1,
+		3,
+		GL_FLOAT,
+		GL_FALSE,
+		sizeof(Vertex),
+		(void*)(sizeof(glm::vec3)));
+
+	// index puffer létrehozása
+	glGenBuffers(1, &m_ibID);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ibID);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLushort), indices.data(), GL_STATIC_DRAW);
+
+	glBindVertexArray(0); // feltöltüttük a VAO-t, kapcsoljuk le
+	glBindBuffer(GL_ARRAY_BUFFER, 0); // feltöltöttük a VBO-t is, ezt is vegyük le
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // feltöltöttük a VBO-t is, ezt is vegyük le
+
+	//------------------------------------------------------------------------------------------------------
+
+	glGenVertexArrays(1, &m_vaoID1);
+	glBindVertexArray(m_vaoID1);
+
+	// hozzunk létre egy új VBO erőforrás nevet
+	glGenBuffers(1, &m_vboID1);
+	glBindBuffer(GL_ARRAY_BUFFER, m_vboID1); // tegyük "aktívvá" a létrehozott VBO-t
+	// töltsük fel adatokkal az aktív VBO-t
+	glBufferData(GL_ARRAY_BUFFER,				// az aktív VBO-ba töltsünk adatokat
+		vert1.size() * sizeof(Vertex),	// ennyi bájt nagyságban
+		vert1.data(),					// erről a rendszermemóriabeli címről olvasva
+		GL_STATIC_DRAW);				// úgy, hogy a VBO-nkba nem tervezünk ezután írni és minden kirajzoláskor felhasnzáljuk a benne lévő adatokat
+
+
+	// VAO-ban jegyezzük fel, hogy a VBO-ban az első 3 float sizeof(Vertex)-enként lesz az első attribútum (pozíció)
+	glEnableVertexAttribArray(0); // ez lesz majd a pozíció
+	glVertexAttribPointer(
+		0,				// a VB-ben található adatok közül a 0. "indexű" attribútumait állítjuk be
+		3,				// komponens szam
+		GL_FLOAT,		// adatok tipusa
+		GL_FALSE,		// normalizalt legyen-e
+		sizeof(Vertex),	// stride (0=egymás után)
+		0				// a 0. indexű attribútum hol kezdődik a sizeof(Vertex)-nyi területen belül
+	);
+
+	// a második attribútumhoz pedig a VBO-ban sizeof(Vertex) ugrás után sizeof(glm::vec3)-nyit menve újabb 3 float adatot találunk (szín)
+	glEnableVertexAttribArray(1); // ez lesz majd a szín
+	glVertexAttribPointer(
+		1,
+		3,
+		GL_FLOAT,
+		GL_FALSE,
+		sizeof(Vertex),
+		(void*)(sizeof(glm::vec3)));
+
+	// index puffer létrehozása
+	glGenBuffers(1, &m_ibID1);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ibID1);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLushort), indices.data(), GL_STATIC_DRAW);
+
+	glBindVertexArray(0); // feltöltüttük a VAO-t, kapcsoljuk le
+	glBindBuffer(GL_ARRAY_BUFFER, 0); // feltöltöttük a VBO-t is, ezt is vegyük le
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // feltöltöttük a VBO-t is, ezt is vegyük le
